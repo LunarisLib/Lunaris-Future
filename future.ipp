@@ -250,7 +250,7 @@ namespace Lunaris {
 	}
 
 	template<typename T, std::enable_if_t<!std::is_void_v<T>, int>>
-	future<T> make_empty_future(const T& v)
+	inline future<T> make_empty_future(const T& v)
 	{
 		promise<T> _p;
 		auto _f = _p.get_future();
@@ -259,7 +259,7 @@ namespace Lunaris {
 	}
 
 	template<typename T, std::enable_if_t<std::is_void_v<T>, int>>
-	future<T> make_empty_future()
+	inline future<T> make_empty_future()
 	{
 		promise<T> _p;
 		auto _f = _p.get_future();
