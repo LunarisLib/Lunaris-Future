@@ -112,6 +112,18 @@ namespace Lunaris {
 	}
 
 	template<typename T>
+	inline void future<T>::operator=(future<T>&& e) noexcept
+	{
+		auto valid_self = m_next; // keeps mutex valid for longet than the lock itself
+		{
+			std::unique_lock<std::mutex> l1(m_next->m_safety, std::defer_lock);
+			std::unique_lock<std::mutex> l2(e.m_next->m_safety, std::defer_lock);
+			std::lock(l1, l2);
+			m_next = std::move(e.m_next);
+		}
+	}
+
+	template<typename T>
 	template<typename Q, std::enable_if_t<!std::is_void_v<Q>, int>>
 	inline typename future<T>::cr_T future<T>::get() const
 	{

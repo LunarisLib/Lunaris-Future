@@ -82,10 +82,10 @@ namespace Lunaris {
 	public:
 		future() = default;
 		future(future&&) noexcept;
+		void operator=(future&&) noexcept;
 
 		future(const future&) = delete;
 		void operator=(const future&) = delete;
-		void operator=(future&&) = delete;
 
 		/// <summary>
 		/// <para>Get the value set, or wait for it, in a const reference way, or void if T is void.</para>
