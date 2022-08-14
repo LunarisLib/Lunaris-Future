@@ -1,169 +1,183 @@
 #pragma once
 
-#include <condition_variable>
+#include <future>
 #include <functional>
+#include <stdexcept>
 #include <memory>
 #include <mutex>
+#include <condition_variable>
 
 namespace Lunaris {
 
-	template<typename T> class future;
-	template<typename T> class promise;
+	namespace detail_future {
+
+		template<typename T>
+		struct _tunnel {
+			T m_store{};
+			std::function<void(T)> m_get = [this](T a) {m_store = std::move(a); }; // on set, this is called. By default, copy to m_store
+			mutable std::mutex m_safety;
+			mutable std::condition_variable m_cond;
+			bool m_redir_enabled = false;
+			bool m_store_set = false;
+
+			void set(T);
+			void redirect_nolock(std::function<void(T)>);
+			void wait() const;
+			template<typename _Rep, typename _Period> void wait_for(const std::chrono::duration<_Rep, _Period>) const;
+		};
+
+		template<>
+		struct _tunnel<void> {
+			std::function<void()> m_get = []() {};
+			mutable std::mutex m_safety;
+			mutable std::condition_variable m_cond;
+			bool m_redir_enabled = false;
+			bool m_store_set = false;
+
+			void set();
+			void redirect_nolock(std::function<void()>);
+			void wait() const;
+			template<typename _Rep, typename _Period> void wait_for(const std::chrono::duration<_Rep, _Period>) const;
+		};
+	}
 
 	/// <summary>
 	/// <para>This holds a not yet set variable. You can get the value itself or link a function to run when the variable is ready.</para>
 	/// </summary>
 	template<typename T>
 	class future {
-		// internal use
-		struct _self {
+		std::shared_ptr<detail_future::_tunnel<T>> m_next = std::make_shared<detail_future::_tunnel<T>>();
 
-			struct _int_data {
-				T* value = nullptr;
-				std::function<void(T)> _next;
-				std::condition_variable triggered_result;
-				std::mutex triggered_mutex;
-				bool has_result = false;
+		// this makes void coexist with const something&
+		using cr_T = std::add_lvalue_reference_t<std::add_const_t<std::remove_pointer_t<T*>>>;
+		template<typename Any> friend class future;
 
-				template<typename Q = T, std::enable_if_t<!std::is_void_v<Q>, int> = 0> void handle_start();
-				template<typename Q = T, std::enable_if_t<!std::is_void_v<Q>, int> = 0> void handle_end();
-				template<typename Q = T, std::enable_if_t<std::is_void_v<Q>, int> = 0> void handle_start();
-				template<typename Q = T, std::enable_if_t<std::is_void_v<Q>, int> = 0> void handle_end();
+	protected:
+		/// <summary>
+		/// <para>Get next future that'll have the value set when this is set.</para>
+		/// </summary>
+		/// <returns>{future&lt;T&gt;}</returns>
+		template<typename Q = T, std::enable_if_t<!std::is_void_v<Q>, int> = 0>
+		future<T> get_future();
 
-				_int_data();
-				~_int_data();
+		/// <summary>
+		/// <para>Get next future that'll have the value set when this is set.</para>
+		/// </summary>
+		/// <returns>{future&lt;T&gt;}</returns>
+		template<typename Q = T, std::enable_if_t< std::is_void_v<Q>, int> = 0>
+		future<T> get_future();
 
-				_int_data(const _int_data&) = delete;
-				_int_data(_int_data&&) = delete;
-				void operator=(const _int_data&) = delete;
-				void operator=(_int_data&&) = delete;
+		/// <summary>
+		/// <para>Set value and send to future (if any).</para>
+		/// </summary>
+		/// <param name="{Q}">Value to be set.</param>
+		template<typename Q = T, std::enable_if_t<!std::is_void_v<Q>, int> = 0>
+		void set_value(Q);
 
-				template<typename Q = T, std::enable_if_t<!std::is_void_v<Q>, int> = 0> T* get_autowait();
-				template<typename Q = T, std::enable_if_t<std::is_void_v<Q>, int> = 0> T* get_autowait();
-			};
-
-			_int_data _data;
-			bool redirect = false;
-
-			template<typename Q = T, std::enable_if_t<!std::is_void_v<Q>, int> = 0>
-			void post(T);
-			template<typename Q = T, std::enable_if_t<std::is_void_v<Q>, int> = 0>
-			void post();
-		};
-
-		// data //
-		std::shared_ptr<_self> m_data = std::make_shared<_self>();
-
-		// functions //
-		future() = default;
-
-		// friends //
-		template<typename V> friend class promise;
-		template<typename V> friend class future; // friend of any of this
+		/// <summary>
+		/// <para>Set value and send to future (if any).</para>
+		/// </summary>
+		template<typename Q = T, std::enable_if_t< std::is_void_v<Q>, int> = 0>
+		void set_value();
 	public:
-
+		future() = default;
 		future(future&&) noexcept;
-		void operator=(future&&) noexcept;
 
 		future(const future&) = delete;
 		void operator=(const future&) = delete;
+		void operator=(future&&) = delete;
 
 		/// <summary>
-		/// <para>Get the value directly (if ready, else wait).</para>
+		/// <para>Get the value set, or wait for it, in a const reference way, or void if T is void.</para>
 		/// </summary>
-		/// <returns>{T*} The value pointer (do not delete this).</returns>
+		/// <returns>{const T&amp;} Reference to variable internally if valid or void if T is void.</returns>
 		template<typename Q = T, std::enable_if_t<!std::is_void_v<Q>, int> = 0>
-		const Q* get();
+		typename future<T>::cr_T get() const;
 
 		/// <summary>
-		/// <para>Get if signal was set. Returns if yes, else wait (like wait()).</para>
+		/// <para>Wait for set.</para>
 		/// </summary>
-		template<typename Q = T, std::enable_if_t<std::is_void_v<Q>, int> = 0>
-		void get();
+		template<typename Q = T, std::enable_if_t< std::is_void_v<Q>, int> = 0>
+		void get() const;
 
 		/// <summary>
-		/// <para>Wait for the variable to be set.</para>
+		/// <para>Wait for the value to be set. Valid only if you have not called then().</para>
 		/// </summary>
-		void wait();
+		/// <returns>{bool} Returns true if it was set properly. May return false if then() was called and exception didn't trigger somehow.</returns>
+		bool wait() const;
 
 		/// <summary>
-		/// <para>Set a function to handle variable when set (you should NOT get() after this).</para>
+		/// <para>Wait for the value to be set for a period of time only. Valid only if you have not called then().</para>
+		/// <para>.</para>
 		/// </summary>
-		/// <param name="{V}">V is a function or lambda that handles the required type and returns something or void.</param>
-		/// <returns>{future&lt;V&gt;} Future of variable set by this function.</returns>
+		/// <returns>{bool} Returns true if it was set.</returns>
+		template<typename _Rep, typename _Period> bool wait(const std::chrono::duration<_Rep, _Period>) const;
+
+		/// <summary>
+		/// <para>Get and take the value permanently from it, like a move.</para>
+		/// <para>After this, this will be unset and invalid to get().</para>
+		/// </summary>
+		/// <returns>{T} The value moved.</returns>
+		template<typename Q = T, std::enable_if_t<!std::is_void_v<Q>, int> = 0>
+		T get_take() const;
+
+		/// <summary>
+		/// <para>Get and reset.</para>
+		/// <para>After this, this will be unset and invalid to get().</para>
+		/// </summary>
+		template<typename Q = T, std::enable_if_t< std::is_void_v<Q>, int> = 0>
+		void get_take() const;
+
+		/// <summary>
+		/// <para>Instead of get(), you can automatically call a function with the value when set.</para>
+		/// <para>The function, on return, will set the next future.</para>
+		/// </summary>
+		/// <param name="{V}">A function to handle the situation.</param>
+		/// <returns>{future} A future of function's return type.</returns>
 		template<typename V, typename Q = T, std::enable_if_t<!std::is_void_v<Q>, int> = 0, typename Res = std::result_of_t<V(Q)>, std::enable_if_t<!std::is_void_v<Res>, int> = 0>
 		auto then(V);
 
 		/// <summary>
-		/// <para>Set a function to handle variable when set (you should NOT get() after this).</para>
+		/// <para>Instead of get(), you can automatically call a function with the value when set.</para>
+		/// <para>The function, on return, will set the next future.</para>
 		/// </summary>
-		/// <param name="{V}">V is a function or lambda that handles the required type and returns something or void.</param>
-		/// <returns>{future&lt;V&gt;} Future of variable set by this function.</returns>
+		/// <param name="{V}">A function to handle the situation.</param>
+		/// <returns>{future} A future of function's return type.</returns>
 		template<typename V, typename Q = T, std::enable_if_t<std::is_void_v<Q>, int> = 0, typename Res = std::result_of_t<V()>, std::enable_if_t<!std::is_void_v<Res>, int> = 0>
 		auto then(V);
 
 		/// <summary>
-		/// <para>Set a function to handle variable when set (you should NOT get() after this).</para>
+		/// <para>Instead of get(), you can automatically call a function with the value when set.</para>
+		/// <para>The function, on return, will set the next future.</para>
 		/// </summary>
-		/// <param name="{V}">V is a function or lambda that handles the required type and returns something or void.</param>
-		/// <returns>{future&lt;V&gt;} Future of variable set by this function.</returns>
+		/// <param name="{V}">A function to handle the situation.</param>
+		/// <returns>{future} A future of function's return type.</returns>
 		template<typename V, typename Q = T, std::enable_if_t<!std::is_void_v<Q>, int> = 0, typename Res = std::result_of_t<V(Q)>, std::enable_if_t<std::is_void_v<Res>, int> = 0>
 		auto then(V);
 
 		/// <summary>
-		/// <para>Set a function to handle variable when set (you should NOT get() after this).</para>
+		/// <para>Instead of get(), you can automatically call a function with the value when set.</para>
+		/// <para>The function, on return, will set the next future.</para>
 		/// </summary>
-		/// <param name="{V}">V is a function or lambda that handles the required type and returns something or void.</param>
-		/// <returns>{future&lt;V&gt;} Future of variable set by this function.</returns>
+		/// <param name="{V}">A function to handle the situation.</param>
+		/// <returns>{future} A future of function's return type.</returns>
 		template<typename V, typename Q = T, std::enable_if_t<std::is_void_v<Q>, int> = 0, typename Res = std::result_of_t<V()>, std::enable_if_t<std::is_void_v<Res>, int> = 0>
 		auto then(V);
 	};
 
 	/// <summary>
 	/// <para>You promise you'll have the value later, but not now!</para>
-	/// <para>Create a future from this and set the value in the future, somewhere else.</para>
+	/// <para>Create a future from this and set the value in the future, somewhere else, in the future.</para>
 	/// </summary>
 	template<typename T>
-	class promise {
-		std::function<void(T)> _next;
+	class promise : protected future<T> {
 	public:
 		promise() = default;
 
-		promise(promise&&);
-		void operator=(promise&&);
-
-		promise(const promise&) = delete;
-		void operator=(const promise&) = delete;
-
-		/// <summary>
-		/// <para>Get future so next value is saved somewhere.</para>
-		/// </summary>
-		/// <returns>{future&lt;T&gt;} Future ready linked to this promise.</returns>
-		template<typename Q = T, std::enable_if_t<!std::is_void_v<Q>, int> = 0>
-		future<Q> get_future();
-
-		/// <summary>
-		/// <para>Get future so next value is saved somewhere.</para>
-		/// </summary>
-		/// <returns>{future&lt;T&gt;} Future ready linked to this promise.</returns>
-		template<typename Q = T, std::enable_if_t<std::is_void_v<Q>, int> = 0>
-		future<Q> get_future();
-
-		/// <summary>
-		/// <para>Set value and send to future (if any).</para>
-		/// </summary>
-		/// <param name="{T}">Value to be set.</param>
-		template<typename Q = T, std::enable_if_t<!std::is_void_v<Q>, int> = 0>
-		void set_value(const Q&);
-
-		/// <summary>
-		/// <para>Set value and send to future (if any).</para>
-		/// </summary>
-		/// <param name="{T}">Value to be set.</param>
-		template<typename Q = T, std::enable_if_t<std::is_void_v<Q>, int> = 0>
-		void set_value();
+		using future<T>::get_future;
+		using future<T>::set_value;
 	};
-	
+
 	/// <summary>
 	/// <para>If you were about to do something, but it didn't work even before knowing it, you can promise with a response already set (future with value set already).</para>
 	/// </summary>
@@ -178,7 +192,6 @@ namespace Lunaris {
 	/// <returns>{future} The future with value already set.</returns>
 	template<typename T, std::enable_if_t<std::is_void_v<T>, int> = 0>
 	future<T> make_empty_future();
-
 }
 
 #include "future.ipp"
