@@ -17,22 +17,45 @@ public:
 using namespace Lunaris::Future;
 
 int main() {
+    {
+        Promise<int> prom;
+        Future<int> fut = prom.get_future();
+        auto nxt = fut.then([](int v) { return v * 3.14f; } ).then([](float f) { return std::to_string(f);} );
 
-    Promise<int> prom;
-    Future<int> fut = prom.get_future();
-    auto nxt = fut.then([](int v) { return v * 3.14f; } ).then([](float f) { return std::to_string(f);} );
+        prom.set(10);
+        std::cout << nxt.get() << std::endl;
+    }
 
-    prom.set(10);
-    std::cout << nxt.get() << std::endl;
+    {
+        Promise<Test> prom_test;
+        Future<Test> fut_test = prom_test.get_future();
+        Future<Test> next_test = fut_test.then([](Test&& test) { 
+            std::cout << "MIDDLE: " << (int)test << std::endl;
+            return test; 
+        });
 
-    Promise<Test> prom_test;
-    Future<Test> fut_test = prom_test.get_future();
-    Future<Test> next_test = fut_test.then([](Test&& test) { return std::move(test); });
+        next_test.then([](Test&& test) {
+            std::cout << "TEST: " << (int)test << std::endl;
+        });
 
-    next_test.then([](Test&& test) {
-        std::cout << "TEST: " << (int)test << std::endl;
-    });
-    prom_test.set(Test{5});
+        prom_test.set(Test{5});
+        prom_test.set(Test{15});
+        prom_test.set(Test{25});
+    }
+
+    {
+        Promise<Test> prom_mult;
+        auto futures = prom_mult.get_multiple_future(10);
+
+        for(size_t p = 0; p < 10; ++p) {
+            futures[p].then([idx = p](Test&& test) {
+                std::cout << "MULT #" << idx << ": " << (int)test << std::endl;
+            });
+        }
+
+        prom_mult.set(rand() % 1000);
+    }
+
 
 
 

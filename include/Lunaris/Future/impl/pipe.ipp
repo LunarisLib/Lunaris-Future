@@ -43,7 +43,7 @@ namespace Future {
             [this]{ return m_redirected || this->can_get(); }
         );
         
-        if (m_redirected) return e_wait_status::VALUE_REDIRECTED;
+        if (m_redirected)    return e_wait_status::VALUE_TUNNELED;
         if (this->can_get()) return e_wait_status::VALUE_SET;
         return e_wait_status::VALUE_UNSET_TIMEOUT;
     }
@@ -58,7 +58,7 @@ namespace Future {
             [this]{ return m_redirected || this->can_get(); }
         );
 
-        if (m_redirected) return e_wait_status::VALUE_REDIRECTED;
+        if (m_redirected)    return e_wait_status::VALUE_TUNNELED;
         if (this->can_get()) return e_wait_status::VALUE_SET;
         return e_wait_status::VALUE_UNSET_TIMEOUT;
     }
@@ -72,8 +72,9 @@ namespace Future {
         if (m_redirected || !this->can_get()) 
             throw FutureException("Object has used redirect or is not valid!");
 
-        m_redirected = true;
-        return std::move(*std::move(m_value));
+        BaseType taken = std::move(*std::move(m_value));
+        m_value.reset();
+        return taken;
     }
 
 } // namespace Future

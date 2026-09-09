@@ -23,8 +23,8 @@ namespace Future {
      */
     enum class e_wait_status {
         VALUE_SET, // the value is set and ready to read
-        VALUE_UNSET_TIMEOUT, // the value is still to be set
-        VALUE_REDIRECTED // the value has been read already or redirected 
+        VALUE_UNSET_TIMEOUT, // the value is still to be set or already withdrawn
+        VALUE_TUNNELED // the value has been read already or redirected 
     };
 
     /**

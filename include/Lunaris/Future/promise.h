@@ -1,5 +1,7 @@
 #pragma once
 
+#include <vector>
+
 #include <Lunaris/Future/future.h>
 
 namespace Lunaris {
@@ -36,6 +38,17 @@ namespace Future {
          * @return `Future` the Future object
          */
         Future<T> get_future();
+
+        /**
+         * @brief Make multiple Futures of this Promise at once
+         * 
+         * NOTE: recalling this makes the prior returned Futures detached
+         * 
+         * @param `amount` how many to spawn
+         * @return `std::vector<Future>` the Future objects
+         */
+        template<typename Q = T, std::enable_if_t<std::is_copy_constructible_v<Q> && std::is_copy_assignable_v<Q>, int> = 0>
+        std::vector<Future<T>> get_multiple_future(const size_t amount);
     };
 
 	/**

@@ -27,7 +27,7 @@ int main() {
         std::printf("Future got wrong result?\n");
         return 1;        
     }
-    if (getting_random_int.wait(std::chrono::milliseconds(0)) != e_wait_status::VALUE_REDIRECTED) {
+    if (getting_random_int.wait(std::chrono::milliseconds(0)) != e_wait_status::VALUE_UNSET_TIMEOUT) {
         std::printf("Future was supposed to have value set.\n");
         return 1;
     }

@@ -22,6 +22,22 @@ namespace Future {
         return next;
     }
 
+    template<typename T>
+    template<typename Q, std::enable_if_t<std::is_copy_constructible_v<Q> && std::is_copy_assignable_v<Q>, int>>
+    std::vector<Future<T>> Promise<T>::get_multiple_future(const size_t amount) {
+        std::vector<Future<T>> m_futures(amount);
+        std::vector<std::shared_ptr<pipe<T>>> m_futures_pipes;
+        for(auto& i : m_futures) m_futures_pipes.push_back(i.m_pipe);
+
+        m_fut.m_pipe->make_callback([next_refs = m_futures_pipes](StoreType<T> val) {
+            for(auto& next_ref : next_refs) {
+                StoreType<T> copy = (const StoreType<T>&)val;
+                next_ref->set(std::move(copy));
+            }
+        });
+        return m_futures;
+    }
+
 
 	template<typename T, std::enable_if_t<!std::is_void_v<T>, int>>
 	inline Future<T> make_empty_future(T&& value) {
