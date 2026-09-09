@@ -1,13 +1,14 @@
 #pragma once
 
 #include <memory>
+#include <functional>
 
 #include <Lunaris/Future/exception.h>
 #include <Lunaris/Future/pipe.h>
 
 namespace Lunaris {
 namespace Future {
-
+    
     template<typename T>
     class Promise;
 
@@ -37,7 +38,7 @@ namespace Future {
          * @brief Attempts to get. Holds if not set yet.
          */
         template<typename Q = T, std::enable_if_t<std::is_void_v<Q>, int> = 0>
-        void get() ;
+        void get();
 
         /**
          * @brief Attempts to get value. Holds if not set yet.
@@ -46,6 +47,20 @@ namespace Future {
          */
         template<typename Q = T, std::enable_if_t<!std::is_void_v<Q>, int> = 0>
         T get();
+
+        /**
+         * @brief Attempts to get. Holds if not set yet. Does not unset
+         */
+        template<typename Q = T, std::enable_if_t<std::is_void_v<Q>, int> = 0>
+        void get_copy();
+
+        /**
+         * @brief Attempts to get value. Holds if not set yet. Takes a copy (no move)
+         * 
+         * @return `T` copy of the value stored
+         */
+        template<typename Q = T, std::enable_if_t<!std::is_void_v<Q> && std::is_copy_constructible_v<Q> && std::is_copy_assignable_v<Q>, int> = 0>
+        T get_copy();
 
         /**
          * @brief Wait until something happens
@@ -71,8 +86,8 @@ namespace Future {
          * @param `callback` a function to take the T type from this future and do something with it.
          * @return `Future` a Future of the result of the callback.
          */
-        template<typename Function>
-        auto then(Function&& callback);
+        template <typename Function>
+        inline auto then(Function&& callback);
     };
 
 } // namespace Future

@@ -3,11 +3,9 @@
 
 #include <Lunaris/future.h>
 
-
 using namespace Lunaris::Future;
 
 int main() {
-
     Promise<int> prom;
     Future<int> nxt = prom.get_future()
         .then([](int val) { std::cout << "Thenn!: " << val << "\n"; return val * 2; })
@@ -28,5 +26,7 @@ int main() {
     prom.set(64);
     thr.join();
 
+    std::printf("PASSED!\n");
+    
     return 0;
 }

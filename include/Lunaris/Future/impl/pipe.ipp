@@ -14,8 +14,10 @@ namespace Future {
             m_redirect = std::move(callback);
             m_redirected = true;
 
-            if (m_value.has_value())
-                m_redirect(std::move(*std::move(m_value)));
+            if (m_value.has_value()) {
+                m_redirect(std::move(*m_value));
+                m_value.reset();
+            }
         }
 
         m_cond.notify_all();
@@ -39,7 +41,7 @@ namespace Future {
     e_wait_status pipe<T>::wait() {
         std::unique_lock<std::mutex> l(m_mtx);
 
-        const bool last_ret = m_cond.wait(l,
+        m_cond.wait(l,
             [this]{ return m_redirected || this->can_get(); }
         );
         
@@ -53,7 +55,7 @@ namespace Future {
     e_wait_status pipe<T>::wait(const std::chrono::duration<Rep, Period>& wait_for) {
         std::unique_lock<std::mutex> l(m_mtx);
 
-        const bool last_ret = m_cond.wait_for(l,
+        m_cond.wait_for(l,
             wait_for,
             [this]{ return m_redirected || this->can_get(); }
         );
@@ -72,9 +74,23 @@ namespace Future {
         if (m_redirected || !this->can_get()) 
             throw FutureException("Object has used redirect or is not valid!");
 
-        BaseType taken = std::move(*std::move(m_value));
+        BaseType taken = std::move(*m_value);
         m_value.reset();
         return taken;
+    }
+
+    template<typename T>
+        template<typename Q, std::enable_if_t<std::is_copy_constructible_v<Q> && std::is_copy_assignable_v<Q>, int>>
+    inline pipe<T>::BaseType pipe<T>::get_copy() {
+        std::unique_lock<std::mutex> l(m_mtx);
+
+        m_cond.wait(l, [this]{ return m_redirected || this->can_get(); });
+
+        if (m_redirected || !this->can_get()) 
+            throw FutureException("Object has used redirect or is not valid!");
+
+        BaseType copy = (const BaseType&)m_value.value();
+        return std::move(copy);
     }
 
 } // namespace Future
