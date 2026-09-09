@@ -103,6 +103,18 @@ namespace Future {
          * @return `BaseType` the value moved off this object
          */
         BaseType get();
+
+        /**
+         * @brief Copy the stored variable from it
+         * 
+         * NOTE: if make_callback was used, this will throw FutureException
+         * 
+         * NOTE: this can be used as many times as needed
+         * 
+         * @return `BaseType` the value copied from this object
+         */
+        template<typename Q = BaseType, std::enable_if_t<std::is_copy_constructible_v<Q> && std::is_copy_assignable_v<Q>, int> = 0>
+        BaseType get_copy();
     };
 
 } // namespace Future
